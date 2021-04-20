@@ -1,0 +1,37 @@
+global_defs {
+   script_user root
+   enable_script_security
+}
+
+vrrp_script chk_haproxy {
+    script "/bin/bash -c 'if [[ $(netstat -nlp | grep {{ kube_apiserver_https_port_listen }}) ]]; then exit 0; else exit 1; fi'"  # haproxy check
+    interval 2
+}
+
+vrrp_instance VI_1 {
+  interface {{ interface }}
+
+  state BACKUP
+  virtual_router_id 51 # same id means same virtual group
+  priority 100 # weight
+  nopreempt # role can change to be master
+
+  unicast_peer {
+{% for host in groups['kube_control_plane'] %}{% if host != inventory_hostname %}
+        {{ hostvars[host]['access_ip'] | default(hostvars[host]['ip'] | default(fallback_ips[host])) }}
+{% endif %}{% endfor %}
+  }
+
+  virtual_ipaddress {
+    {{ loadbalancer_apiserver_vip }}  # vip
+  }
+
+  authentication {
+    auth_type PASS
+    auth_pass password
+  }
+
+  track_script {
+      chk_haproxy
+  }
+}

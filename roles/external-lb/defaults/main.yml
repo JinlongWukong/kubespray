@@ -1,0 +1,5 @@
+# docker image name
+Keepalived_docker_image: osixia/keepalived:2.0.20
+haproxy_docker_image: haproxy
+# listen port
+kube_apiserver_https_port_listen: 8443

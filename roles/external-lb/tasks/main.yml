@@ -1,0 +1,74 @@
+---
+####### haproxy part #############
+- name: Create directory -> /etc/haproxy
+  file:
+    path: /etc/haproxy
+    state: directory
+  tags: haproxy
+
+- name: Generate haproxy configuration
+  template:
+    src: haproxy.cfg.j2
+    dest: /etc/haproxy/haproxy.cfg
+  register: hp_conf
+  tags: haproxy
+
+- name: Run haproxy container
+  shell: if docker ps -a | grep ex_lb_haproxy ;then echo 'container existed'; \
+    else docker run --restart always -d --name=ex_lb_haproxy --net=host -v /etc/haproxy:/usr/local/etc/haproxy/:ro {{ haproxy_docker_image }}; fi
+  register: run_hp_result
+  changed_when: "'container existed' not in run_hp_result.stdout"
+  tags: haproxy
+
+- name: Restart haproxy container when conf changed
+  shell: docker restart ex_lb_haproxy
+  when: hp_conf.changed and not run_hp_result.changed
+  tags: haproxy
+
+####### keepalive part #############
+# If keepalived interface is not define
+# select interface based on vip(same subnet)
+- set_fact:
+    interface: |-
+      {% for item in ansible_interfaces -%}
+           {% if ansible_facts[item].ipv4 is defined -%}
+              {% if (ansible_facts[item].ipv4.address + '/' + ansible_facts[item].ipv4.netmask) | ipaddr('network/prefix') | network_in_network(vip) -%}
+                 {{ item -}}
+              {% endif -%}
+           {% endif -%}
+      {% endfor -%}
+  tags: keepalived
+  when: interface is not defined
+
+- name: Stop if interface format is wrong
+  assert:
+    that:
+      - interface is match("^e|b[a-z0-9]+[0-9]$")
+      - interface in ansible_interfaces
+  tags: keepalived
+
+- name: Create directory -> /etc/keepalived
+  file:
+    path: /etc/keepalived
+    state: directory
+  tags: keepalived
+
+- name: Generate keepalived configuration
+  template:
+    src: keepalived.conf.j2
+    dest: /etc/keepalived/keepalived.conf
+  register: ka_conf
+  tags: keepalived
+
+- name: Run keepalived container
+  shell: if docker ps -a | grep ex_lb_keepalived ;then echo 'container existed'; \
+    else docker run --cap-add=NET_ADMIN --cap-add=NET_BROADCAST --cap-add=NET_RAW --net=host --volume /etc/keepalived/keepalived.conf:/usr/local/etc/keepalived/keepalived.conf \
+    --name=ex_lb_keepalived --restart always -d {{ Keepalived_docker_image }} --copy-service; fi
+  register: run_ka_result
+  changed_when: "'container existed' not in run_ka_result.stdout"
+  tags: keepalived
+
+- name: Restart keepalived container when conf changed
+  shell: docker restart ex_lb_keepalived
+  when: ka_conf.changed and not run_ka_result.changed
+  tags: keepalived
