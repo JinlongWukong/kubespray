@@ -1,29 +1,61 @@
 ---
 ####### haproxy part #############
-- name: Create directory -> /etc/haproxy
-  file:
-    path: /etc/haproxy
-    state: directory
-  tags: haproxy
+- block:
+    - name: Create directory -> /etc/haproxy
+      file:
+        path: /etc/haproxy
+        state: directory
+      tags: haproxy
 
-- name: Generate haproxy configuration
-  template:
-    src: haproxy.cfg.j2
-    dest: /etc/haproxy/haproxy.cfg
-  register: hp_conf
-  tags: haproxy
+    - name: Generate haproxy configuration
+      template:
+        src: haproxy.cfg.j2
+        dest: /etc/haproxy/haproxy.cfg
+      register: hp_conf
+      tags: haproxy
 
-- name: Run haproxy container
-  shell: if docker ps -a | grep ex_lb_haproxy ;then echo 'container existed'; \
-    else docker run --restart always -d --name=ex_lb_haproxy --net=host -v /etc/haproxy:/usr/local/etc/haproxy/:ro {{ haproxy_docker_image }}; fi
-  register: run_hp_result
-  changed_when: "'container existed' not in run_hp_result.stdout"
-  tags: haproxy
+    - name: Run haproxy container
+      shell: if docker ps -a | grep ex_lb_haproxy ;then echo 'container existed'; \
+        else docker run --restart always -d --name=ex_lb_haproxy --net=host -v /etc/haproxy:/usr/local/etc/haproxy/:ro {{ haproxy_docker_image }}; fi
+      register: run_hp_result
+      changed_when: "'container existed' not in run_hp_result.stdout"
+      tags: haproxy
 
-- name: Restart haproxy container when conf changed
-  shell: docker restart ex_lb_haproxy
-  when: hp_conf.changed and not run_hp_result.changed
-  tags: haproxy
+    - name: Restart haproxy container when conf changed
+      shell: docker restart ex_lb_haproxy
+      when: hp_conf.changed and not run_hp_result.changed
+      tags: haproxy
+
+  when: loadbalancer_apiserver_type == 'haproxy'
+
+####### nginx part #############
+- block:
+    - name: Create directory -> /etc/nginx
+      file:
+        path: /etc/nginx
+        state: directory
+      tags: nginx
+
+    - name: Generate nginx configuration
+      template:
+        src: nginx.conf.j2
+        dest: /etc/nginx/nginx.conf
+      register: nginx_conf
+      tags: nginx
+
+    - name: Run nginx container
+      shell: if docker ps -a | grep ex_lb_nginx ;then echo 'container existed'; \
+        else docker run --restart always -d --name=ex_lb_nginx --net=host -v /etc/nginx/nginx.conf:/etc/nginx/nginx.conf:ro {{ nginx_docker_image }}; fi
+      register: run_nginx_result
+      changed_when: "'container existed' not in run_nginx_result.stdout"
+      tags: nginx
+
+    - name: Restart nginx container when conf changed
+      shell: docker restart ex_lb_nginx
+      when: nginx_conf.changed and not run_nginx_result.changed
+      tags: nginx
+
+  when: loadbalancer_apiserver_type == 'nginx'
 
 ####### keepalive part #############
 # If keepalived interface is not define
